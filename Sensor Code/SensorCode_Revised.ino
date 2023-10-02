@@ -27,32 +27,29 @@ int16_t Bz2;
 int16_t avg_x;
 int16_t avg_y;
 int16_t avg_z;
-int16_t delta_x1;
-int16_t delta_y1;
-int16_t delta_z1;
-int16_t delta_x2;
-int16_t delta_y2;
-int16_t delta_z2;
+int16_t delta_x;
+int16_t delta_y;
+int16_t delta_z;
 int list1[6] = {0};
 int list2[6] = {0};
-int list;
 int num_pin = 2;
-int sensorCalibration(int *list) {
-  if (list[0] == 0) {
-        list[0] = Bx1;
-        list[1] = By1;
-        list[2] = Bz1;
-      }
 
+int sensorCalibration(int list[], int Bx, int By, int Bz) {
+  if (list[0] == 0) {
+        list[0] = Bx;
+        list[1] = By;
+        list[2] = Bz;
+      }
   else {
-    list[3] = Bx1;
-    list[4] = By1;
-    list[5] = Bz1;
-    delta_x1 = list[3] - list[0];
-    delta_y1 = list[4] - list[1];  // Values are zeroed from their starting position 
-    delta_z1 = list[5] - list[2]; 
+    list[3] = Bx;
+    list[4] = By;
+    list[5] = Bz;
+    delta_x = list[3] - list[0];
+    delta_y = list[4] - list[1];  // Values are zeroed from their starting position 
+    delta_z = list[5] - list[2];
       }
   }
+
 // Function for I2C multiplexer switching
 void tcaselect(uint8_t i) {
   if (i > 7) return;
@@ -116,12 +113,12 @@ void loop(){
       Bx1 = (int16_t)(bx_value << 4) / 16 ;
       By1 = (int16_t)(by_value << 4) / 16 ;
       Bz1 = (int16_t)(bz_value << 4) / 16 ;
-      sensorCalibration(list1);
-      Serial.print(delta_x1);
+      sensorCalibration(list1, Bx1, By1, Bz1);
+      Serial.print(delta_x);
       Serial.print(",");   
-      Serial.print(delta_y1);
+      Serial.print(delta_y);
       Serial.print(",");
-      Serial.print(delta_z1);
+      Serial.print(delta_z);
       Serial.print(",");
       delay(50);
     }
@@ -132,12 +129,12 @@ void loop(){
       /*avg_x = (int16_t)(Bx1 + Bx2) / 2;
       avg_y = (int16_t)(By1 + By2) / 2;     //Obtains the average of the two readings
       avg_z = (int16_t)(Bz1 + Bz2) / 2;*/ 
-      sensorCalibration(list2);
-      Serial.print(delta_x2);
+      sensorCalibration(list2, Bx2, By2, Bz2);
+      Serial.print(delta_x);
       Serial.print(",");
-      Serial.print(delta_y2);
+      Serial.print(delta_y);
       Serial.print(",");
-      Serial.print(delta_z2); 
+      Serial.print(delta_z); 
       Serial.println(",");
       delay(50);
       }
