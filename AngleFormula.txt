@@ -1,0 +1,5 @@
+#Converts from sensor frame to desired drone frame
+      X_drone = delta_y1;
+      Y_drone = -delta_x1;
+#calculates angle in all 4 quadrants. +180 gives opposite of magnet movement which results in the direction of flow
+      Angle = (atan2(Y_drone,X_drone)*(180/PI))+180;
