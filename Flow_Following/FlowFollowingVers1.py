@@ -2,14 +2,14 @@ from djitellopy import Tello
 import time
 
 # Imported Variables as placeholder
-mag = 0
-deltaMag = 0
-angle = 15
-epsilon = 1
+#mag = 0
+#deltaMag = 0
+#epsilon = 1
 velMag = 0
 velMax = 0
 velAngle = 0
-r = 15
+angle = 15
+#r = 15
 
 # inFile Variables
 kP = 1.0
