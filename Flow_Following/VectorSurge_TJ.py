@@ -54,8 +54,6 @@ def turn():
         #
         last_error = error
         # last_time = current_time
-        # if abs(error) < 45:
-        #     Kp = 1.5
         if abs(error) <= angle_threshold:  # if error is within desired threshold, hover
             print("Within Threshold")
             tello.send_rc_control(0,forward_command,0,0)
@@ -63,6 +61,7 @@ def turn():
             time.sleep(0.01)
             # if error is in Q1 or Q4 rotate right
             # updating logic to use source angle in if statemetnt condition
+        # if error is in Q1 or Q4 on unit circle turn right
         elif 0 <= sourceAngle <= (desiredAngle - angle_threshold) or -270 <= sourceAngle <= -180:
             right_command = command
             right_command = max(min(right_command, 100), -100)
@@ -252,6 +251,7 @@ async def main():
     while True:
         data = await client.read_gatt_char(characteristic_uuid)
         if data:
+            # cleaning data from arduino to extract just the x and y values
             string_n = data.decode()
             ard_string = string_n.strip()
             ard_list = ard_string.split()
@@ -259,6 +259,7 @@ async def main():
             y = float(ard_list[2])
             elapsed_time = time.time() - start_time
 
+            # calibration done over 10 values
             if not calibration_done:
                 if len(x_values) < calibration_values_count:
                     x_values.append(x)
@@ -290,11 +291,12 @@ async def main():
                 avg_x = sum(x_buffer) / num_points_for_averaging
                 avg_y = sum(y_buffer) / num_points_for_averaging
 
-                # calibration
+                # bias calibration
                 avg_x = avg_x * 0.7536477847
                 avg_y = avg_y * 1.272200653
 
-                # core variables
+                # Calculations of core variables 
+                # Calculates incoming angle based on unit circle 
                 sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
 
@@ -304,7 +306,7 @@ async def main():
                 if turn():
                     turnState = True
                 # print(f"Average Sensor Magnitude: {sensor_magnitude}, Time: {elapsed_time}, Angle: {angle}")
-
+        # failsafe switch just in case
         if keyboard.is_pressed('space'):
             print("Spacebar pressed. Exiting.")
             tello.query_battery()
