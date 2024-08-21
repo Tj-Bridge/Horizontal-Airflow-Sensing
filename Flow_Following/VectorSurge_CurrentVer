@@ -33,7 +33,7 @@ maxCalMag = []
 desiredAngle = 90
 
 # inFile Variables
-Kp = 0.85
+Kp = 0.95
 kI = 1
 kD = 0.05
 integral = 0
@@ -46,11 +46,11 @@ castState = bool
 turnState = bool
 runState = bool
 
-angle_threshold = 5
+angle_threshold = 10
 
 y_lowerBound = -10
 y_upperBound = 10
-magThreshold = 2.5
+magThreshold = 8
 
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
@@ -60,64 +60,60 @@ characteristic_uuid = "00002A56-0000-1000-8000-00805F9B34FB"
 client = BleakClient(address)
 
 # Define turn event
-def turn():
+async def turn():
     global velAngle, angle, castState, sensorMagnitude, sourceAngle
     # print('in turn')
-    x = read_data()[0]
-    y = read_data()[1]
-    avg_x = get_xy(x, y)[0]
-    avg_y = get_xy(x, y)[1]
     if castState:
-        sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
-        error = desiredAngle - sourceAngle
-        forward_command = -20
-        # delta_time = current_time - last_time
-        #
-        # integral += error * delta_time
-        # derivative = (error - last_error) / delta_time if last_error is not None else 0
-        #
-        command = int(Kp * error)  # + Ki * integral + Kd * derivative)
-        #
-        last_error = error
-        # last_time = current_time
-        # if abs(error) < 45:
-        #     Kp = 1.5
-        if abs(error) <= angle_threshold:  # if error is within desired threshold, hover
-            print("Within Threshold")
-            tello.send_rc_control(0,forward_command,0,0)
-            command = 0
-            time.sleep(0.01)
-            # if error is in Q1 or Q4 rotate right
-            # updating logic to use source angle in if statement condition
-        elif 0 <= sourceAngle <= (desiredAngle - angle_threshold) or -270 <= sourceAngle <= -180:
-            right_command = command
-            right_command = max(min(right_command, 100), -100)
-            print("Turning right, source angle: " + str(sourceAngle))
-            tello.send_rc_control(0, forward_command, 0, right_command)  # velocity-based
-            time.sleep(0.01)
+        while sensorMagnitude >= magThreshold:
+            x, y = await read_data()
+            avg_x, avg_y = await get_xy()
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            error = desiredAngle - sourceAngle
+            forward_command = 40
+            # delta_time = current_time - last_time
+            #
+            # integral += error * delta_time
+            # derivative = (error - last_error) / delta_time if last_error is not None else 0
+            #
+            command = int(Kp * error)  # + Ki * integral + Kd * derivative)
+            #
+            last_error = error
+            # last_time = current_time
+            # if abs(error) < 45:
+            #     Kp = 1.5
+            if abs(error) <= angle_threshold:  # if error is within desired threshold, hover
+                print("Within Threshold")
+                tello.send_rc_control(0,forward_command,0,0)
+                command = 0
+                time.sleep(0.01)
+                # if error is in Q1 or Q4 rotate right
+                # updating logic to use source angle in if statement condition
+            if 0 <= sourceAngle <= (desiredAngle - angle_threshold) or -270 <= sourceAngle <= -180:
+                right_command = command
+                right_command = max(min(right_command, 100), -100)
+                print("Turning right, source angle: " + str(sourceAngle) + ': ' + str(sensorMagnitude) + " error: " + str(error))
+                tello.send_rc_control(0, 0, 0, right_command)  # velocity-based
+                time.sleep(0.01)
 
-        # if error is in Q2 or Q3 rotate left
-        else:
-            left_command = -command
-            left_command = max(min(left_command, 100), -100)
-            print("Turning left, source angle: " + str(sourceAngle))
-            tello.send_rc_control(0, forward_command, 0, left_command)  # velocity-based
-            time.sleep(0.01)
+            # if error is in Q2 or Q3 rotate left
+            else:
+                left_command = -command
+                left_command = max(min(left_command, 100), -100)
+                print("Turning left, source angle & Magnitude: " + str(sourceAngle) + ':' + str(sensorMagnitude)+ " error: " + str(error))
+                tello.send_rc_control(0, 0, 0, left_command)  # velocity-based
+                time.sleep(0.01)
         return True
-    else:
-        return False
+    return False
 
 # Define the cast event
-def cast():
+async def cast():
     global sensorMagnitude, magThreshold
     lap1 = time.time()
     initial_cast_time = 3  # Starting cast time
     increment_time = 1  # Time increment per loop
     forward_move_time = 0.5  # Time to move forward (in seconds)
-    x = read_data()[0]
-    y = read_data()[1]
-    avg_x = get_xy(x, y)[0]
-    avg_y = get_xy(x, y)[1]
+    x, y = await read_data()
+    avg_x, avg_y = await get_xy()
     sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
     # Update the goal cast time for the left movement
     goalCastTime = initial_cast_time + increment_time * (time.time() - lap1)
@@ -125,6 +121,8 @@ def cast():
     # Reset the elapsed time for this cast
     elapsed = 0
     if sensorMagnitude > magThreshold:
+        x, y = await read_data()
+        avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print('Flow detected, following')
         return True
@@ -132,8 +130,10 @@ def cast():
 
     lap1 = time.time()
     while elapsed < goalCastTime:
-        tello.send_rc_control(-10, 0, 0, 0)  # Move left
+        tello.send_rc_control(-20, 0, 0, 0)  # Move left
         elapsed = time.time() - lap1
+        x, y = await read_data()
+        avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving left, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
@@ -150,6 +150,8 @@ def cast():
     while elapsed < forward_move_time:
         tello.send_rc_control(0, 20, 0, 0)  # Move forward
         elapsed = time.time() - lap1
+        x, y = await read_data()
+        avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
@@ -163,8 +165,10 @@ def cast():
     elapsed = 0
     lap1 = time.time()
     while elapsed < goalCastTime:
-        tello.send_rc_control(10, 0, 0, 0)  # Move right
+        tello.send_rc_control(20, 0, 0, 0)  # Move right
         elapsed = time.time() - lap1
+        x, y = await read_data()
+        avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving right, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
@@ -179,6 +183,8 @@ def cast():
     while elapsed < forward_move_time:
         tello.send_rc_control(0, 20, 0, 0)  # Move forward
         elapsed = time.time() - lap1
+        x, y = await read_data()
+        avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
@@ -213,8 +219,6 @@ def cast():
 #         cast()
 #         return True
 
-
-
 # Define wait event
 def wait():
     # tello.send_rc_control(0, 0, 0, 0)
@@ -246,8 +250,8 @@ def wait():
 
 # run
 
-def read_data():
-    data = client.read_gatt_char(characteristic_uuid)
+async def read_data():
+    data = await client.read_gatt_char(characteristic_uuid)
     if data:
         string_n = data.decode()
         ard_string = string_n.strip()
@@ -256,8 +260,9 @@ def read_data():
         y = float(ard_list[2])
         return x, y
 
-def calibrate(x, y):
+async def calibrate():
         global x_values, y_values, x_offset, y_offset, calibration_done, calibration_values_count, calMag, maxCalMag
+        x,y = await read_data()
         while not calibration_done:
             if len(x_values) < calibration_values_count:
                 x_values.append(x)
@@ -269,11 +274,13 @@ def calibrate(x, y):
                               zip(x_values, y_values)]
                     maxCalMag = max(calMag)
                     calibration_done = True
-                    return x_offset, y_offset
+                    print(x_offset, y_offset)
+        return x_offset, y_offset
 
 
-def get_xy(x, y):
+async def get_xy():
     global x_offset, y_offset, x_buffer, y_buffer, num_points_for_averaging
+    x, y = await read_data()
     x -= x_offset
     y -= y_offset
 
@@ -291,9 +298,10 @@ def get_xy(x, y):
         avg_y = sum(y_buffer) / num_points_for_averaging
 
         # calibration
-        avg_x = avg_x * 0.7536477847
-        avg_y = avg_y * 1.272200653
+        avg_x = avg_x * 0.9239278904
+        avg_y = avg_y * 1.016852573
         return avg_x, avg_y
+    return 0,0
 
 async def main():
     global tello, sourceAngle, sensorMagnitude,castState, turnState, runState, x_offset, y_offset, num_points_for_averaging, x_buffer, y_buffer
@@ -313,17 +321,15 @@ async def main():
 
     last_magnitude = None
     while True:
-        x = read_data()[0]
-        y = read_data()[1]
-        x_offset = calibrate(x, y)[0]
-        y_offset = calibrate(x, y)[1]
+        x, y = await read_data()
+        x_offset, y_offset = await calibrate()
 
         # core variables
 
         # if magnitude is greater than magnitude while drone is hovering without the fan on
-        if cast():
+        if await cast():
             castState = True
-        if turn():
+        if await turn():
             turnState = True
         # print(f"Average Sensor Magnitude: {sensor_magnitude}, Time: {elapsed_time}, Angle: {angle}")
 
