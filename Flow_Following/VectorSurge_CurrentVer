@@ -47,6 +47,7 @@ turnState = bool
 runState = bool
 
 angle_threshold = 10
+sourceAngle = 0
 
 y_lowerBound = -10
 y_upperBound = 10
@@ -59,13 +60,15 @@ characteristic_uuid = "00002A56-0000-1000-8000-00805F9B34FB"
 # Create a BleakClient object
 client = BleakClient(address)
 
+#Create Tello drone object
+tello = Tello()
+
 # Define turn event
 async def turn():
-    global velAngle, angle, castState, sensorMagnitude, sourceAngle
+    global angle, castState, sensorMagnitude, sourceAngle
     # print('in turn')
     if castState:
         while sensorMagnitude >= magThreshold:
-            x, y = await read_data()
             avg_x, avg_y = await get_xy()
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
             error = desiredAngle - sourceAngle
@@ -112,7 +115,6 @@ async def cast():
     initial_cast_time = 3  # Starting cast time
     increment_time = 1  # Time increment per loop
     forward_move_time = 0.5  # Time to move forward (in seconds)
-    x, y = await read_data()
     avg_x, avg_y = await get_xy()
     sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
     # Update the goal cast time for the left movement
@@ -121,7 +123,6 @@ async def cast():
     # Reset the elapsed time for this cast
     elapsed = 0
     if sensorMagnitude > magThreshold:
-        x, y = await read_data()
         avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print('Flow detected, following')
@@ -132,7 +133,6 @@ async def cast():
     while elapsed < goalCastTime:
         tello.send_rc_control(-20, 0, 0, 0)  # Move left
         elapsed = time.time() - lap1
-        x, y = await read_data()
         avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving left, Magnitude: " + str(sensorMagnitude))
@@ -150,7 +150,6 @@ async def cast():
     while elapsed < forward_move_time:
         tello.send_rc_control(0, 20, 0, 0)  # Move forward
         elapsed = time.time() - lap1
-        x, y = await read_data()
         avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
@@ -167,7 +166,6 @@ async def cast():
     while elapsed < goalCastTime:
         tello.send_rc_control(20, 0, 0, 0)  # Move right
         elapsed = time.time() - lap1
-        x, y = await read_data()
         avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving right, Magnitude: " + str(sensorMagnitude))
@@ -183,7 +181,6 @@ async def cast():
     while elapsed < forward_move_time:
         tello.send_rc_control(0, 20, 0, 0)  # Move forward
         elapsed = time.time() - lap1
-        x, y = await read_data()
         avg_x, avg_y = await get_xy()
         sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
@@ -304,13 +301,12 @@ async def get_xy():
     return 0,0
 
 async def main():
-    global tello, sourceAngle, sensorMagnitude,castState, turnState, runState, x_offset, y_offset, num_points_for_averaging, x_buffer, y_buffer
+    global tello,castState, turnState, runState, x_offset, y_offset
 
     # Connect to the peripheral
     await client.connect()
     start_time = time.time()
 
-    tello = Tello()
     tello.connect()
     print(tello.query_battery())
 
@@ -320,11 +316,11 @@ async def main():
     tello.move_up(20)
 
     last_magnitude = None
-    while True:
-        x, y = await read_data()
-        x_offset, y_offset = await calibrate()
 
-        # core variables
+    # initial calibration
+    x_offset, y_offset = await calibrate()
+
+    while True:
 
         # if magnitude is greater than magnitude while drone is hovering without the fan on
         if await cast():
