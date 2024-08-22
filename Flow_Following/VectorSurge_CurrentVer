@@ -30,6 +30,7 @@ right = 0
 num_points_for_averaging = 10
 calibration_values_count = 10
 maxCalMag = []
+ambientMag = 0
 desiredAngle = 90
 
 # inFile Variables
@@ -52,6 +53,7 @@ sourceAngle = 0
 y_lowerBound = -10
 y_upperBound = 10
 magThreshold = 8
+magLimit  = 30
 
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
@@ -65,12 +67,13 @@ tello = Tello()
 
 # Define turn event
 async def turn():
-    global angle, castState, sensorMagnitude, sourceAngle
+    global angle, castState, sensorMagnitude, sourceAngle, magLimit
     # print('in turn')
     if castState:
         while sensorMagnitude >= magThreshold:
             avg_x, avg_y = await get_xy()
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
             error = desiredAngle - sourceAngle
             forward_command = 40
             # delta_time = current_time - last_time
@@ -79,34 +82,52 @@ async def turn():
             # derivative = (error - last_error) / delta_time if last_error is not None else 0
             #
             command = int(Kp * error)  # + Ki * integral + Kd * derivative)
+
             #
-            last_error = error
+            # last_error = error
             # last_time = current_time
             # if abs(error) < 45:
             #     Kp = 1.5
             if abs(error) <= angle_threshold:  # if error is within desired threshold, hover
-                print("Within Threshold")
+                print("Within Threshold. Moving towards detected flow at " + str(sourceAngle) + ' degrees with a magnitude of '+ str(sensorMagnitude))
                 tello.send_rc_control(0,forward_command,0,0)
-                command = 0
-                time.sleep(0.01)
+                sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
+                time.sleep(0.5)
+
                 # if error is in Q1 or Q4 rotate right
                 # updating logic to use source angle in if statement condition
-            if 0 <= sourceAngle <= (desiredAngle - angle_threshold) or -270 <= sourceAngle <= -180:
+                # Changing the line below to reflect positive values. If turning does not work, switch back
+            elif (270 <= sourceAngle <= 360) or (0 <= sourceAngle <= (desiredAngle - angle_threshold)):
                 right_command = command
-                right_command = max(min(right_command, 100), -100)
-                print("Turning right, source angle: " + str(sourceAngle) + ': ' + str(sensorMagnitude) + " error: " + str(error))
+                right_command = max(min(right_command, 100), 0)
+                print(right_command)
+                print("Turning right, source angle & Magnitude: " + str(sourceAngle) + ':' + str(sensorMagnitude)+ " error: " + str(error))
                 tello.send_rc_control(0, 0, 0, right_command)  # velocity-based
-                time.sleep(0.01)
+                sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
+                time.sleep(0.1)
 
             # if error is in Q2 or Q3 rotate left
-            else:
-                left_command = -command
-                left_command = max(min(left_command, 100), -100)
+            # Changing the line below to negate above elif statement. Change back to else statement if logic fails
+            elif (desiredAngle + angle_threshold) <= sourceAngle < 270:
+                left_command = command
+                left_command = min(max(left_command, -100), 0)
+                print(left_command)
                 print("Turning left, source angle & Magnitude: " + str(sourceAngle) + ':' + str(sensorMagnitude)+ " error: " + str(error))
                 tello.send_rc_control(0, 0, 0, left_command)  # velocity-based
-                time.sleep(0.01)
-        return True
-    return False
+                sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
+                time.sleep(0.1)
+
+            # End Condition for Flow Detection
+            if sensorMagnitude > magLimit:
+                print("Maximum magnitude exceeded ... ending run")
+                tello.land()
+                await client.disconnect()
+                break
+
+    else:
+        return False
+    return True
+
 
 # Define the cast event
 async def cast():
@@ -116,7 +137,7 @@ async def cast():
     increment_time = 1  # Time increment per loop
     forward_move_time = 0.5  # Time to move forward (in seconds)
     avg_x, avg_y = await get_xy()
-    sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+    sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
     # Update the goal cast time for the left movement
     goalCastTime = initial_cast_time + increment_time * (time.time() - lap1)
 
@@ -124,7 +145,7 @@ async def cast():
     elapsed = 0
     if sensorMagnitude > magThreshold:
         avg_x, avg_y = await get_xy()
-        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
         print('Flow detected, following')
         return True
     # Move Left
@@ -134,7 +155,7 @@ async def cast():
         tello.send_rc_control(-20, 0, 0, 0)  # Move left
         elapsed = time.time() - lap1
         avg_x, avg_y = await get_xy()
-        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
         print("Moving left, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
             print('Flow detected, following')
@@ -148,10 +169,10 @@ async def cast():
     elapsed = 0
     lap1 = time.time()
     while elapsed < forward_move_time:
-        tello.send_rc_control(0, 20, 0, 0)  # Move forward
+        tello.send_rc_control(0, 30, 0, 0)  # Move forward
         elapsed = time.time() - lap1
         avg_x, avg_y = await get_xy()
-        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
             print('Flow detected, following')
@@ -164,10 +185,10 @@ async def cast():
     elapsed = 0
     lap1 = time.time()
     while elapsed < goalCastTime:
-        tello.send_rc_control(20, 0, 0, 0)  # Move right
+        tello.send_rc_control(30, 0, 0, 0)  # Move right
         elapsed = time.time() - lap1
         avg_x, avg_y = await get_xy()
-        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
         print("Moving right, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
             print('Flow detected, following')
@@ -179,10 +200,10 @@ async def cast():
     elapsed = 0
     lap1 = time.time()
     while elapsed < forward_move_time:
-        tello.send_rc_control(0, 20, 0, 0)  # Move forward
+        tello.send_rc_control(0, 30, 0, 0)  # Move forward
         elapsed = time.time() - lap1
         avg_x, avg_y = await get_xy()
-        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
         if sensorMagnitude > magThreshold:
             print('Flow detected, following')
@@ -272,6 +293,7 @@ async def calibrate():
                     maxCalMag = max(calMag)
                     calibration_done = True
                     print(x_offset, y_offset)
+                    print('Maximum Magnitude Detected: ' + str(maxCalMag))
         return x_offset, y_offset
 
 
@@ -301,7 +323,7 @@ async def get_xy():
     return 0,0
 
 async def main():
-    global tello,castState, turnState, runState, x_offset, y_offset
+    global tello,castState, turnState, runState, x_offset, y_offset, ambientMag
 
     # Connect to the peripheral
     await client.connect()
@@ -312,6 +334,7 @@ async def main():
 
     # Makes drone takeoff
     tello.takeoff()
+    tello.send_rc_control(0,0,0,0)
     time.sleep(2)
     tello.move_up(20)
 
@@ -319,7 +342,6 @@ async def main():
 
     # initial calibration
     x_offset, y_offset = await calibrate()
-
     while True:
 
         # if magnitude is greater than magnitude while drone is hovering without the fan on
