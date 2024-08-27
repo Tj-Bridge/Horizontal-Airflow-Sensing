@@ -34,7 +34,7 @@ num_points_for_averaging = 10
 calibration_values_count = 10
 maxCalMag = []
 ambientMag = 0
-magTolerance = 1
+magTolerance = 1.3
 desiredAngle = 90
 
 # Backtracking Variables
@@ -42,8 +42,8 @@ last_error = 0
 
 # PID Controller Variables
 Kp = 0.95
-kI = 1
-kD = 0.05
+Ki = 0
+Kd = 0
 integral = 0
 prevError = 0
 prevTime = 0
@@ -60,7 +60,7 @@ sourceAngle = 0
 y_lowerBound = -10
 y_upperBound = 10
 magThreshold = 1
-magLimit  = 5
+magLimit  = 8
 
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
@@ -74,7 +74,7 @@ tello = Tello()
 
 # Define turn event
 async def turn():
-    global angle, castState, sensorMagnitude, sourceAngle, magLimit, last_error
+    global angle, castState, sensorMagnitude, sourceAngle, magLimit, last_error, Ki, Kd, Kp, integral, prevTime
     # print('in turn')
     if castState:
         while sensorMagnitude >= magThreshold:
@@ -83,18 +83,21 @@ async def turn():
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             error = desiredAngle - sourceAngle
             forward_command = 60
-            # delta_time = current_time - last_time
+            current_time = time.time()
+            if prevTime is None or prevTime == 0:
+                prevTime = current_time - 0.1
+            error = desiredAngle - sourceAngle
+            delta_time = current_time - prevTime
+            integral += error * delta_time
+            print('Time =' + str(delta_time))
+            print('Error =' + str(error))
+            print('Integral =' + str(integral))
+            derivative = (error - last_error) / delta_time #if last_error is not None else 0
             #
-            # integral += error * delta_time
-            # derivative = (error - last_error) / delta_time if last_error is not None else 0
-            #
-            command = int(Kp * error)  # + Ki * integral + Kd * derivative)
-
+            command = int(Kp * error + Ki * integral + Kd * derivative)
             #
             last_error = error
-            # last_time = current_time
-            # if abs(error) < 45:
-            #     Kp = 1.5
+            prevTime = current_time
 
             if abs(error) <= angle_threshold:  # if error is within desired threshold, hover
                 print("Within Threshold. Moving towards detected flow at " + str(sourceAngle) + ' degrees with a magnitude of '+ str(sensorMagnitude))
@@ -252,7 +255,7 @@ async def cast():
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             ambientMag.append(sensorMagnitude)
-            ambientMag = max(ambientMag) + magTolerance
+            ambientMag = magTolerance*max(ambientMag)
             castCalibrated = True
             print(ambientMag)
             print("---------------------Cast Calibration Complete-------------------------------------")
@@ -372,8 +375,8 @@ async def get_xy():
         avg_y = sum(y_buffer) / num_points_for_averaging
 
         # calibration
-        avg_x = avg_x * 0.9795326160
-        avg_y = avg_y * .9935092312
+        avg_x = avg_x * 0.9869247406
+        avg_y = avg_y * 0.9786229353
         return avg_x, avg_y
     return 0,0
 
