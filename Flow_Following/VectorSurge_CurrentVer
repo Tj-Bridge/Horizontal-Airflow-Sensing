@@ -60,7 +60,7 @@ sourceAngle = 0
 y_lowerBound = -10
 y_upperBound = 10
 magThreshold = 1
-magLimit  = 8
+magLimit  = 2.6
 
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
@@ -89,12 +89,9 @@ async def turn():
             error = desiredAngle - sourceAngle
             delta_time = current_time - prevTime
             integral += error * delta_time
-            print('Time =' + str(delta_time))
-            print('Error =' + str(error))
-            print('Integral =' + str(integral))
-            derivative = (error - last_error) / delta_time #if last_error is not None else 0
+            #derivative = (error - last_error) / delta_time #if last_error is not None else 0
             #
-            command = int(Kp * error + Ki * integral + Kd * derivative)
+            command = int(Kp * error + Ki * integral) #+ Kd * derivative)
             #
             last_error = error
             prevTime = current_time
@@ -103,7 +100,7 @@ async def turn():
                 print("Within Threshold. Moving towards detected flow at " + str(sourceAngle) + ' degrees with a magnitude of '+ str(sensorMagnitude))
                 tello.send_rc_control(0,forward_command,0,0)
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
-                time.sleep(0.25)
+                time.sleep(0.1)
 
                 # if error is in Q1 or Q4 rotate right
                 # updating logic to use source angle in if statement condition
@@ -166,8 +163,8 @@ async def cast():
 
     lap1 = time.time()
     initial_cast_time = 3  # Starting cast time
-    increment_time = 2  # Time increment per loop
-    forward_move_time = 0.5  # Time to move forward (in seconds)
+    increment_time = 4  # Time increment per loop
+    forward_move_time = 1  # Time to move forward (in seconds)
     avg_x, avg_y = await get_xy()
     #sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
     # Update the goal cast time for the left movement
