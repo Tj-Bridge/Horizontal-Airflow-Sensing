@@ -234,8 +234,9 @@ async def cast():
     else:
         percentMag = len([i for i in castSample if 0.8 * leftLimit[0] < i < leftLimit[0]]) / len(castSample) * 100
         print(percentMag)
+        sampleAngle = [sampleAngle, leftAngleDev]
         sampleAngleDev = stdev(sampleAngle)
-        print(sampleAngleDev)
+        print('Standard Deviation is: ' + str(sampleAngleDev))
         if sampleAngleDev > 1.1 * leftAngleDev:
             print('Flow detected, following')
             return True
@@ -275,8 +276,9 @@ async def cast():
     else:
         percentMag = len([i for i in castSample if 0.8 * forwardLimit[0] < i < forwardLimit[0]]) / len(castSample) * 100
         print(percentMag)
+        sampleAngle = [sampleAngle, forwardAngleDev]
         sampleAngleDev = stdev(sampleAngle)
-        print(sampleAngleDev)
+        print('Standard Deviation is: ' + str(sampleAngleDev))
         if sampleAngleDev > 1.1 * forwardAngleDev:
             print('Flow detected, following')
             return True
@@ -313,8 +315,9 @@ async def cast():
     else:
         percentMag = len([i for i in castSample if 0.8 * rightLimit[0] < i < rightLimit[0]]) / len(castSample) * 100
         print(percentMag)
+        sampleAngle = [sampleAngle, rightAngleDev]
         sampleAngleDev = stdev(sampleAngle)
-        print(sampleAngleDev)
+        print('Standard Deviation is: ' + str(sampleAngleDev))
         if sampleAngleDev > 1.1 * rightAngleDev:
             print('Flow detected, following')
             return True
@@ -380,7 +383,9 @@ async def cast():
         if headPos < 0: # Check for negatives, adjust by 360
             headPos += 360
     if castCalibrated:
+        sampleAngle = [sampleAngle, forwardAngleDev]
         sampleAngleDev = stdev(sampleAngle)
+        print('Standard Deviation is: ' + str(sampleAngleDev))
         if sampleAngleDev > 1.1 * forwardAngleDev:
             print('Flow detected, following')
             return True
