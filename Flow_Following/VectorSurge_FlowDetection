@@ -1,0 +1,483 @@
+from statistics import stdev
+
+from djitellopy import Tello
+import time
+from math import *
+import string
+import asyncio
+from bleak import BleakClient
+import time
+import csv
+import keyboard
+import os
+import math
+from djitellopy import Tello
+import numpy as np
+from numpy.f2py.crackfortran import endifs
+
+# Initialize drone/sensor parameters
+angle = 0
+sensorMagnitude = 0
+castSpeed = 20
+
+# Initialize calibration and filtering
+x_values = []
+y_values = []
+calibration_done = False
+castCalibrated = False
+x_offset = 0.0
+y_offset = 0.0
+x_buffer = []
+y_buffer = []
+calMag = []
+left = 0
+right = 0
+num_points_for_averaging = 10
+calibration_values_count = 10
+maxCalMag = []
+ambientMag = 0
+magTolerance = 1.3
+desiredAngle = 90
+castMag = []
+castAngle = []
+sampleAngle = []
+sampleMag = []
+leftAngleDev = 0
+leftMagDev = 0
+forwardAngleDev = 0
+forwardMagDev = 0
+rightAngleDev = 0
+rightMagDev = 0
+leftLimit = 0
+rightLimit = 0
+forwardLimit = 0
+leftMagPercent = 0
+forwardMagPercent = 0
+rightMagPercent = 0
+
+# Backtracking Variables
+last_error = 0
+
+# PID Controller Variables
+Kp = 0.95
+Ki = 0
+Kd = 0
+integral = 0
+prevError = 0
+prevTime = 0
+currTime = 0
+
+# Establish States
+castState = bool
+turnState = bool
+runState = bool
+
+angle_threshold = 10
+sourceAngle = 0
+
+y_lowerBound = -10
+y_upperBound = 10
+magThreshold = 1
+magLimit  = 8
+headPos = 0
+# BLE setup
+address = "18:2D:E3:60:9B:30"  # Change for your specific device
+characteristic_uuid = "00002A56-0000-1000-8000-00805F9B34FB"
+
+# Create a BleakClient object
+client = BleakClient(address)
+
+#Create Tello drone object
+tello = Tello()
+
+# Define turn event
+async def turn():
+    global angle, castState, sensorMagnitude, sourceAngle, magLimit, last_error, Ki, Kd, Kp, integral, prevTime, headPos
+    # print('in turn')
+    if castState:
+        headPos = tello.get_yaw()
+        if headPos < 0: # Check for negatives, adjust by 360
+            headPos += 360
+        while (sourceAngle >= headPos+angle_threshold) or (sourceAngle <= headPos-angle_threshold):
+            avg_x, avg_y = await get_xy()
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+            error = desiredAngle - sourceAngle
+            forward_command = 60
+            current_time = time.time()
+            if prevTime is None or prevTime == 0:
+                prevTime = current_time - 0.000001
+            proportional = Kp * error
+            delta_time = current_time - prevTime
+            integral = integral + Ki * error * delta_time
+            print('Time =' + str(delta_time))
+            print('Error =' + str(error))
+            print('Integral =' + str(integral))
+            derivative = Kd * (error - last_error) / delta_time
+            #
+            command = int(proportional + integral + derivative)
+            #
+            last_error = error
+            prevTime = current_time
+
+            if abs(error) <= angle_threshold:  # if error is within desired threshold, surge forward
+                print("Within Threshold. Moving towards detected flow at " + str(sourceAngle) + ' degrees with a magnitude of '+ str(sensorMagnitude))
+                tello.send_rc_control(0,forward_command,0,0)
+                sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+                time.sleep(0.25)
+
+                # if error is in Q1 or Q4 rotate right
+                # updating logic to use source angle in if statement condition
+                # Changing the line below to reflect positive values. If turning does not work, switch back
+            elif (270 <= sourceAngle <= 360) or (0 <= sourceAngle <= (desiredAngle - angle_threshold)):
+                right_command = abs(command)
+                right_command = max(min(right_command, 100), 0)
+                print(right_command)
+                print("Turning right, source angle & Magnitude: " + str(sourceAngle) + ':' + str(sensorMagnitude)+ " error: " + str(error))
+                tello.send_rc_control(0, 0, 0, right_command)  # velocity-based
+                sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+                time.sleep(0.1)
+
+            # if error is in Q2 or Q3 rotate left
+            # Changing the line below to negate above elif statement. Change back to else statement if logic fails
+            elif (desiredAngle + angle_threshold) <= sourceAngle < 270:
+                left_command = command
+                left_command = min(max(left_command, -100), 0)
+                print(left_command)
+                print("Turning left, source angle & Magnitude: " + str(sourceAngle) + ':' + str(sensorMagnitude)+ " error: " + str(error))
+                tello.send_rc_control(0, 0, 0, left_command)  # velocity-based
+                sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+                time.sleep(0.1)
+            last_error = error
+            print(last_error)
+            # End Condition for Flow Detection
+            if sensorMagnitude > magLimit:
+                print("Maximum magnitude exceeded ... ending run")
+                tello.land()
+                await client.disconnect()
+                break
+
+        if last_error < 0:
+            #tello.rotate_clockwise(abs(last_error) + 90)
+            print('Backtracking turning right')
+        elif last_error > 0:
+            #tello.rotate_counter_clockwise(last_error + 90)
+            print('Backtracking turning left')
+    else:
+        return False
+    return True
+
+# Define the cast event
+async def cast():
+    global sensorMagnitude, magThreshold, castCalibrated, ambientMag, magTolerance, headPos, castMag, castAngle, sourceAngle, leftLimit, rightLimit, forwardLimit, forwardMagPercent, leftMagPercent, rightMagPercent, sampleAngle, sampleMag, leftAngleDev, leftMagDev, forwardMagDev, forwardAngleDev, rightAngleDev, rightMagDev
+    # Initialize Variable as list before calibrating
+    if not castCalibrated:
+        castMag = []
+        castAngle = []
+
+    lap1 = time.time()
+    initial_cast_time = 3.5  # Starting cast time
+    increment_time = 2  # Time increment per loop
+    forward_move_time = 3.5  # Time to move forward (in seconds)
+    castSample = []
+
+    # Update the goal cast time for the left movement
+    goalCastTime = initial_cast_time + increment_time * (time.time() - lap1)
+
+    print('Current Yaw = ' + str(headPos))
+    headPos = tello.get_yaw()
+    if headPos < 0:  # Check for negatives, adjust by 360
+        headPos += 360
+    if castCalibrated:
+        if (sourceAngle >= headPos + angle_threshold) or (sourceAngle <= headPos - angle_threshold):
+            avg_x, avg_y = await get_xy()
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            print('Flow detected, following: ' + str(sourceAngle))
+            return True
+    else:
+        avg_x, avg_y = await get_xy()
+        sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+        castAngle.append(sourceAngle)
+        castMag.append(sensorMagnitude)
+
+    # Move Left --------------------------------------------------------------------------------------------------------
+    print('Moving left...')
+    castLeftMag = []
+    castLeftAngle = []
+    sampleAngle = []
+    sampleMag = []
+    elapsed = 0
+    lap1 = time.time()
+    while elapsed < goalCastTime:
+        tello.send_rc_control(-castSpeed, 0, 0, 0)  # Move left
+        elapsed = time.time() - lap1
+        avg_x, avg_y = await get_xy()
+        if castCalibrated:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sampleMag.append(sensorMagnitude)
+            sampleAngle.append(sourceAngle)
+        else:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            castLeftAngle.append(sourceAngle)
+            castLeftMag.append(sensorMagnitude)
+        print("Moving left, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
+        if castCalibrated:
+            if (sourceAngle >= 180 + angle_threshold) or (sourceAngle <= 180 - angle_threshold):
+                print('Flow detected, following')
+                return True
+    if not castCalibrated:
+        castMag.append(castLeftMag)
+        castAngle.append(castLeftAngle)
+    else:
+        percentMag = len([i for i in castSample if 0.8 * leftLimit[0] < i < leftLimit[0]]) / len(castSample) * 100
+        print(percentMag)
+        sampleAngleDev = stdev(sampleAngle)
+        print(sampleAngleDev)
+        if sampleAngleDev > 1.1 * leftAngleDev:
+            print('Flow detected, following')
+            return True
+    time.sleep(0.1)  # Small delay to prevent too frequent checks
+
+    # Move Forward -----------------------------------------------------------------------------------------------------
+    print('Moving forward...')
+    castForwardMag = []
+    castForwardAngle = []
+    sampleAngle = []
+    sampleMag = []
+    elapsed = 0
+    lap1 = time.time()
+    while elapsed < forward_move_time:
+        tello.send_rc_control(0, castSpeed, 0, 0)  # Move forward
+        elapsed = time.time() - lap1
+        avg_x, avg_y = await get_xy()
+        if castCalibrated:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+        else:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            castForwardAngle.append(sourceAngle)
+            castForwardMag.append(sensorMagnitude)
+        print("Moving forward, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
+        headPos = tello.get_yaw()
+        if headPos < 0: # Check for negatives, adjust by 360
+            headPos += 360
+        if castCalibrated:
+            if (sourceAngle >= headPos + angle_threshold) or (sourceAngle <= headPos - angle_threshold):
+                print('Flow detected, following')
+                return True
+    if not castCalibrated:
+        castMag.append(castForwardMag)
+        castAngle.append(castForwardAngle)
+    else:
+        percentMag = len([i for i in castSample if 0.8 * forwardLimit[0] < i < forwardLimit[0]]) / len(castSample) * 100
+        print(percentMag)
+        sampleAngleDev = stdev(sampleAngle)
+        print(sampleAngleDev)
+        if sampleAngleDev > 1.1 * forwardAngleDev:
+            print('Flow detected, following')
+            return True
+    time.sleep(0.1)  # Small delay to prevent too frequent checks
+
+    # Move Right -------------------------------------------------------------------------------------------------------
+    print('Moving right...')
+    castRightMag = []
+    castRightAngle = []
+    sampleAngle = []
+    sampleMag = []
+    elapsed = 0
+    lap1 = time.time()
+    while elapsed < goalCastTime:
+        tello.send_rc_control(castSpeed, 0, 0, 0)  # Move right
+        elapsed = time.time() - lap1
+        avg_x, avg_y = await get_xy()
+        if castCalibrated:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+        else:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            castRightAngle.append(sourceAngle)
+            castRightMag.append(sensorMagnitude)
+        print("Moving right, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
+        if castCalibrated:
+            if 0 + angle_threshold <= sourceAngle <= 360 - angle_threshold:
+                print('Flow detected, following')
+                return True
+    if not castCalibrated:
+        castMag.append(castRightMag)
+        castAngle.append(castRightAngle)
+    else:
+        percentMag = len([i for i in castSample if 0.8 * rightLimit[0] < i < rightLimit[0]]) / len(castSample) * 100
+        print(percentMag)
+        sampleAngleDev = stdev(sampleAngle)
+        print(sampleAngleDev)
+        if sampleAngleDev > 1.1 * rightAngleDev:
+            print('Flow detected, following')
+            return True
+    time.sleep(0.1)
+
+    # Move Forward -----------------------------------------------------------------------------------------------------
+    print('Moving forward...')
+    castForwardMag = []
+    castForwardAngle = []
+    sampleAngle = []
+    sampleMag = []
+    elapsed = 0
+    lap1 = time.time()
+    while elapsed < forward_move_time:
+        tello.send_rc_control(0, castSpeed, 0, 0)  # Move forward
+        elapsed = time.time() - lap1
+        avg_x, avg_y = await get_xy()
+        if castCalibrated:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+        else:
+            # Get Max Values
+            leftLimit = (max(castMag[1]), max(castAngle[1]))
+            forwardLimit = (max(castMag[2]), max(castAngle[2]))
+            rightLimit = (max(castMag[3]), max(castAngle[3]))
+
+            # Establish percent of values within 20% of maximum
+            leftMagPercent = len([i for i in castMag[1] if 0.8 * leftLimit[0] < i < leftLimit[0]]) / len(castMag[1])*100
+            forwardMagPercent = len([i for i in castMag[2] if 0.8 * rightLimit[0] < i < rightLimit[0]]) / len(castMag[2])*100
+            rightMagPercent = len([i for i in castMag[3] if 0.8 * forwardLimit[0] < i < forwardLimit[0]]) / len(castMag[3])*100
+            leftAnglePercent = len([i for i in castAngle[1] if 0.8 * leftLimit[1] < i < leftLimit[1]]) / len(castAngle[1])*100
+            forwardAnglePercent = len([i for i in castAngle[2] if 0.8 * rightLimit[1] < i < rightLimit[1]]) / len(castAngle[2])*100
+            rightAnglePercent = len([i for i in castAngle[3] if 0.8 * forwardLimit[1] < i < forwardLimit[1]]) / len(castAngle[3])*100
+            leftMagDev = stdev(castMag[1])
+            forwardMagDev = stdev(castMag[2])
+            rightMagDev = stdev(castMag[3])
+            leftAngleDev = stdev(castAngle[1])
+            forwardAngleDev = stdev(castAngle[2])
+            rightAngleDev = stdev(castAngle[3])
+
+            # Set Calibration State to True
+            castCalibrated = True
+
+            # Print Values From Calibration
+            print(castMag)
+            print(castAngle)
+            print('The Max value for LEFT CAST is: ' + str(leftLimit))
+            print('The Max value for FORWARD CAST is: ' + str(forwardLimit))
+            print('The Max value for RIGHT CAST is: ' + str(rightLimit))
+            print('The percentage of values within 20 percent of the LEFT CAST MAXIMUM MAGNITUDE is: ' + str(leftMagPercent))
+            print('The percentage of values within 20 percent of the FORWARD CAST MAXIMUM MAGNITUDE is: ' + str(forwardMagPercent))
+            print('The percentage of values within 20 percent of the RIGHT CAST MAXIMUM MAGNITUDE is: ' + str(rightMagPercent))
+            print('The percentage of values within 20 percent of the LEFT CAST MAXIMUM ANGLE is: ' + str(leftAnglePercent))
+            print('The percentage of values within 20 percent of the FORWARD CAST MAXIMUM ANGLE is: ' + str(forwardAnglePercent))
+            print('The percentage of values within 20 percent of the RIGHT CAST MAXIMUM ANGLE is: ' + str(rightAnglePercent))
+
+            print("---------------------Cast Calibration Complete-------------------------------------")
+        avg_x, avg_y = await get_xy()
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+        sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+        print("Moving forward, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
+        headPos = tello.get_yaw()
+        if headPos < 0: # Check for negatives, adjust by 360
+            headPos += 360
+    if castCalibrated:
+        sampleAngleDev = stdev(sampleAngle)
+        if sampleAngleDev > 1.1 * forwardAngleDev:
+            print('Flow detected, following')
+            return True
+        time.sleep(0.1)
+
+    # Increment cast time for the next loop
+    initial_cast_time += increment_time
+    return False
+
+async def read_data():
+    data = await client.read_gatt_char(characteristic_uuid)
+    if data:
+        string_n = data.decode()
+        ard_string = string_n.strip()
+        ard_list = ard_string.split()
+        x = float(ard_list[1])
+        y = float(ard_list[2])
+        return x, y
+
+async def calibrate():
+        global x_values, y_values, x_offset, y_offset, calibration_done, calibration_values_count, calMag, maxCalMag
+        x,y = await read_data()
+        while not calibration_done:
+            if len(x_values) < calibration_values_count:
+                x_values.append(x)
+                y_values.append(y)
+                if len(x_values) == calibration_values_count:
+                    x_offset = sum(x_values) / calibration_values_count
+                    y_offset = sum(y_values) / calibration_values_count
+                    calMag = [math.sqrt((xi - x_offset) ** 2 + (yi - y_offset) ** 2) for xi, yi in
+                              zip(x_values, y_values)]
+                    maxCalMag = max(calMag)
+                    calibration_done = True
+                    print(x_offset, y_offset)
+                    print('Maximum Magnitude Detected: ' + str(maxCalMag))
+        return x_offset, y_offset
+
+async def get_xy():
+    global x_offset, y_offset, x_buffer, y_buffer, num_points_for_averaging
+    x, y = await read_data()
+    x -= x_offset
+    y -= y_offset
+
+    # Buffer update for x and y
+    x_buffer.append(x)
+    y_buffer.append(y)
+
+    # Averaging Filter
+    if len(x_buffer) > num_points_for_averaging:
+        x_buffer.pop(0)
+    if len(y_buffer) > num_points_for_averaging:
+        y_buffer.pop(0)
+    if len(x_buffer) == num_points_for_averaging and len(y_buffer) == num_points_for_averaging:
+        avg_x = sum(x_buffer) / num_points_for_averaging
+        avg_y = sum(y_buffer) / num_points_for_averaging
+
+        # calibration
+        avg_x = avg_x * 0.9869247406
+        avg_y = avg_y * 0.9786229353
+        return avg_x, avg_y
+    return 0,0
+
+async def main():
+    global tello,castState, turnState, runState, x_offset, y_offset, ambientMag, sensorMagnitude
+
+    # Connect to the peripheral
+    await client.connect()
+    start_time = time.time()
+
+    tello.connect()
+    print(tello.query_battery())
+
+    # Makes drone takeoff
+    tello.takeoff()
+    tello.send_rc_control(0,0,0,0)
+    time.sleep(2)
+    tello.move_up(20)
+
+    last_magnitude = None
+
+    # initial calibration
+    x_offset, y_offset = await calibrate()
+    print('Initial Calibration Complete')
+    while True:
+        if await cast():
+            castState = True
+        if await turn():
+            turnState = True
+        # print(f"Average Sensor Magnitude: {sensor_magnitude}, Time: {elapsed_time}, Angle: {angle}")
+
+        if keyboard.is_pressed('space'):
+            print("SpaceBar pressed. Exiting.")
+            tello.query_battery()
+            tello.land()
+            break
+    await client.disconnect()
+asyncio.run(main())
+
+# Disconnect from Tello
+# tello.end()
