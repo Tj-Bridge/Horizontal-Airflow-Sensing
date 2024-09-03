@@ -257,6 +257,8 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sampleMag.append(sensorMagnitude)
+            sampleAngle.append(sourceAngle)
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
@@ -299,6 +301,8 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sampleMag.append(sensorMagnitude)
+            sampleAngle.append(sourceAngle)
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
@@ -338,6 +342,8 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sampleMag.append(sensorMagnitude)
+            sampleAngle.append(sourceAngle)
         else:
             # Get Max Values
             leftLimit = (max(castMag[1]), max(castAngle[1]))
@@ -361,6 +367,7 @@ async def cast():
             # Set Calibration State to True
             castCalibrated = True
 
+
             # Print Values From Calibration
             print(castMag)
             print(castAngle)
@@ -376,7 +383,7 @@ async def cast():
 
             print("---------------------Cast Calibration Complete-------------------------------------")
         avg_x, avg_y = await get_xy()
-        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+        sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
         sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
         print("Moving forward, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
         headPos = tello.get_yaw()
