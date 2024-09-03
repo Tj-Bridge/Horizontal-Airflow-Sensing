@@ -127,7 +127,7 @@ async def turn():
             last_error = error
             print(last_error)
             # End Condition for Flow Detection
-            if sensorMagnitude > magLimit:
+            if sensorMagnitude > magLimit and abs(error) <= angleThreshold:
                 print("Maximum magnitude exceeded ... ending run")
                 tello.land()
                 await client.disconnect()
@@ -142,17 +142,6 @@ async def turn():
     else:
         return False
     return True
-
-#async def backtrack():
-#    global lastCommand, velCommand, timeStep
-#    while sensorMagnitude <= magThreshold:
-#        if lastCommand == 'Front-Back':
-#            tello.send_rc_control(0, velCommand, 0, 0)
-#            time.sleep(timeStep)
-#        else:
-#            tello.send_rc_control(velCommand, 0, 0, 0)
-#            time.sleep(timeStep)
-#    return True
 
 # Define the cast event
 async def cast():
@@ -195,7 +184,6 @@ async def cast():
             if sensorMagnitude > magThreshold:
                 print('Flow detected, following')
                 return True
-
         time.sleep(0.1)  # Small delay to prevent too frequent checks
 
     # Move Forward
@@ -216,7 +204,6 @@ async def cast():
             if sensorMagnitude > magThreshold:
                 print('Flow detected, following')
                 return True
-
         time.sleep(0.1)
 
     # Move Right
@@ -270,58 +257,11 @@ async def cast():
     initial_cast_time += increment_time
     return False
 
-#
-# # Define the run event
-# def run():
-#     global prevTime, dronePosition, sensorMagnitude
-#     # print('in run')
-#     if castState:
-#         lap1 = time.time()
-#         while sensorMagnitude < 18:
-#             target = velAngle
-#             measurement = angle
-#             elapsedTime = time.time() - lap1
-#             prevTime = time.time()
-#             time.sleep(0.1)
-#             yaw_rate = pidController(kP, kI, kD, target, measurement)
-#             tello.send_rc_control(0, 30, 0, yaw_rate)
-#             time.sleep(0.1)
-#         tello.land()
-#         return True
-#     else:
-#         cast()
-#         return True
-
 # Define wait event
 def wait():
     # tello.send_rc_control(0, 0, 0, 0)
     time.sleep(5)
     return True
-
-
-# Move forward at 5 velocity for 10 seconds
-# tello.send_rc_control(0, 50, 0, 0)  # Move forward at velocity 50 (50 out of 100)
-# time.sleep(10)
-
-# Hover
-# tello.send_rc_control(0, 0, 0, 0)
-# time.sleep(2)  # Give some time to stop moving
-
-
-# # State Machine
-# def call_state():
-#     global sensorMagnitude, thresholdMag, castState, turnState, runState
-#
-#     while sensorMagnitude < 100:
-#         print("sensor Mag = " + str(sensorMagnitude))
-#         if cast():
-#             castState = True
-#         if turn():
-#             turnState = True
-        # if run():
-        #     runState = True
-
-# run
 
 async def read_data():
     data = await client.read_gatt_char(characteristic_uuid)
@@ -350,8 +290,7 @@ async def calibrate():
                     print(x_offset, y_offset)
                     print('Maximum Magnitude Detected: ' + str(maxCalMag))
         return x_offset, y_offset
-
-
+    
 async def get_xy():
     global x_offset, y_offset, x_buffer, y_buffer, num_points_for_averaging
     x, y = await read_data()
