@@ -224,10 +224,6 @@ async def cast():
             castLeftAngle.append(sourceAngle)
             castLeftMag.append(sensorMagnitude)
         print("Moving left, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
-        if castCalibrated:
-            if (sourceAngle >= 180 + angle_threshold) or (sourceAngle <= 180 - angle_threshold):
-                print('Flow detected, following')
-                return True
     if not castCalibrated:
         castMag.append(castLeftMag)
         castAngle.append(castLeftAngle)
@@ -268,10 +264,6 @@ async def cast():
         headPos = tello.get_yaw()
         if headPos < 0: # Check for negatives, adjust by 360
             headPos += 360
-        if castCalibrated:
-            if (sourceAngle >= headPos + angle_threshold) or (sourceAngle <= headPos - angle_threshold):
-                print('Flow detected, following')
-                return True
     if not castCalibrated:
         castMag.append(castForwardMag)
         castAngle.append(castForwardAngle)
@@ -309,10 +301,6 @@ async def cast():
             castRightAngle.append(sourceAngle)
             castRightMag.append(sensorMagnitude)
         print("Moving right, Magnitude & Angle: " + str(sensorMagnitude) + ' & ' + str(sourceAngle))
-        if castCalibrated:
-            if 0 + angle_threshold <= sourceAngle <= 360 - angle_threshold:
-                print('Flow detected, following')
-                return True
     if not castCalibrated:
         castMag.append(castRightMag)
         castAngle.append(castRightAngle)
