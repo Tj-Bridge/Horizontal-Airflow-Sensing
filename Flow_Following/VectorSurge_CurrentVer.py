@@ -64,6 +64,11 @@ y_upperBound = 10
 magThreshold = 1
 magLimit = 3
 
+#Cast Variables
+initial_cast_time = 4
+increment_time = 3
+forward_move_time = 1
+
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
 characteristic_uuid = "00002A56-0000-1000-8000-00805F9B34FB"
@@ -163,15 +168,12 @@ async def turn():
 
 # Define the cast event
 async def cast():
-    global sensorMagnitude, magThreshold, castCalibrated, ambientMag, magTolerance
+    global sensorMagnitude, magThreshold, castCalibrated, ambientMag, magTolerance, initial_cast_time, increment_time, forward_move_time
     # Initialize Variable as list before calibrating
     if not castCalibrated:
         ambientMag = []
 
     lap1 = time.time()
-    initial_cast_time = 3  # Starting cast time
-    increment_time = 4  # Time increment per loop
-    forward_move_time = 1  # Time to move forward (in seconds)
     avg_x, avg_y = await get_xy()
     # sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) - ambientMag
     # Update the goal cast time for the left movement
