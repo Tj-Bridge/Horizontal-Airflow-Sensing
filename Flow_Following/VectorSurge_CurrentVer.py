@@ -38,7 +38,6 @@ maxCalMag = []
 ambientMag = 0
 magTolerance = 1.3
 desiredAngle = 90
-
 # Backtracking Variables
 last_error = 0
 
@@ -83,7 +82,7 @@ def get_unique_filename(base="AugRotation_Back", extension=".csv"):
 filename = get_unique_filename()
 csv_file = open(filename, mode='w', newline='')
 csv_writer = csv.writer(csv_file)
-csv_writer.writerow(['Time', 'Yaw', 'Command', 'Error', 'Desired Angle', 'Sensor Magnitude'])
+csv_writer.writerow(['Time', 'Yaw','B_x', 'B_y','Sensor Angle', 'Error', 'Sensor Magnitude'])
 
 # Define turn event
 async def turn():
@@ -115,7 +114,7 @@ async def turn():
                 tello.send_rc_control(0, forward_command, 0, 0)
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
                 csv_writer.writerow(
-                    [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, command, error, desiredAngle,
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, error,
                      sensorMagnitude])
                 time.sleep(0.1)
 
@@ -131,7 +130,7 @@ async def turn():
                 tello.send_rc_control(0, 0, 0, right_command)  # velocity-based
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
                 csv_writer.writerow(
-                    [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, command, error, desiredAngle,
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, error,
                      sensorMagnitude])
                 time.sleep(0.1)
 
@@ -146,7 +145,7 @@ async def turn():
                 tello.send_rc_control(0, 0, 0, left_command)  # velocity-based
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
                 csv_writer.writerow(
-                    [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, command, error, desiredAngle,
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, error,
                      sensorMagnitude])
                 time.sleep(0.1)
             last_error = error
@@ -192,7 +191,7 @@ async def cast():
             avg_x, avg_y = await get_xy()
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
             print('Flow detected, following')
             return True
@@ -206,12 +205,12 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
             ambientMag.append(sensorMagnitude)
         print("Moving left, Magnitude: " + str(sensorMagnitude))
@@ -232,12 +231,12 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
             ambientMag.append(sensorMagnitude)
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
@@ -258,12 +257,12 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
             ambientMag.append(sensorMagnitude)
         print("Moving right, Magnitude: " + str(sensorMagnitude))
@@ -284,12 +283,12 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), sourceAngle, Kp, Ki, Kd, 0, 0, desiredAngle,
+                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
                  sensorMagnitude])
             ambientMag.append(sensorMagnitude)
             ambientMag = magTolerance * max(ambientMag)
