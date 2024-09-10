@@ -33,11 +33,12 @@ calMag = []
 left = 0
 right = 0
 num_points_for_averaging = 10
-calibration_values_count = 10
+calibration_values_count = 15
 maxCalMag = []
 ambientMag = 0
 magTolerance = 1.3
 desiredAngle = 90
+
 # Backtracking Variables
 last_error = 0
 
@@ -61,7 +62,7 @@ sourceAngle = 0
 y_lowerBound = -10
 y_upperBound = 10
 magThreshold = 1
-magLimit = 2.6
+magLimit = 3
 
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
@@ -73,7 +74,7 @@ client = BleakClient(address)
 # Create Tello drone object
 tello = Tello()
 
-def get_unique_filename(base="AugRotation_Back", extension=".csv"):
+def get_unique_filename(base=r"C:\Users\ltjth\Documents\Research\VectorSurge", extension=".csv"):
     counter = 1
     while os.path.exists(f"{base}_{counter}{extension}"):
         counter += 1
@@ -82,7 +83,7 @@ def get_unique_filename(base="AugRotation_Back", extension=".csv"):
 filename = get_unique_filename()
 csv_file = open(filename, mode='w', newline='')
 csv_writer = csv.writer(csv_file)
-csv_writer.writerow(['Time', 'Yaw','B_x', 'B_y','Sensor Angle', 'Error', 'Sensor Magnitude'])
+csv_writer.writerow(['Time', 'Bx', 'By','Sensor Angle', 'Sensor Magnitude', 'Command', 'Error', 'State'])
 
 # Define turn event
 async def turn():
@@ -114,8 +115,7 @@ async def turn():
                 tello.send_rc_control(0, forward_command, 0, 0)
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
                 csv_writer.writerow(
-                    [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, error,
-                     sensorMagnitude])
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x,avg_y, sourceAngle, sensorMagnitude, 0, error, 2])
                 time.sleep(0.1)
 
                 # if error is in Q1 or Q4 rotate right
@@ -130,9 +130,8 @@ async def turn():
                 tello.send_rc_control(0, 0, 0, right_command)  # velocity-based
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
                 csv_writer.writerow(
-                    [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, error,
-                     sensorMagnitude])
-                time.sleep(0.1)
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, right_command, error, 1])
+                time.sleep(0.05)
 
             # if error is in Q2 or Q3 rotate left
             # Changing the line below to negate above elif statement. Change back to else statement if logic fails
@@ -145,24 +144,18 @@ async def turn():
                 tello.send_rc_control(0, 0, 0, left_command)  # velocity-based
                 sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
                 csv_writer.writerow(
-                    [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, error,
-                     sensorMagnitude])
-                time.sleep(0.1)
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, left_command, error, 1])
+                time.sleep(0.05)
             last_error = error
             print(last_error)
             # End Condition for Flow Detection
             if sensorMagnitude > magLimit and abs(error) <= angle_threshold:
+                csv_writer.writerow(
+                    [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, error, 4])
                 print("Maximum magnitude exceeded ... ending run")
                 tello.land()
                 await client.disconnect()
                 break
-
-        if last_error < 0:
-            # tello.rotate_clockwise(abs(last_error) + 90)
-            print('Backtracking turning right')
-        elif last_error > 0:
-            # tello.rotate_counter_clockwise(last_error + 90)
-            print('Backtracking turning left')
     else:
         return False
     return True
@@ -191,8 +184,7 @@ async def cast():
             avg_x, avg_y = await get_xy()
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
             print('Flow detected, following')
             return True
 
@@ -205,13 +197,11 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
             ambientMag.append(sensorMagnitude)
         print("Moving left, Magnitude: " + str(sensorMagnitude))
         if castCalibrated:
@@ -231,13 +221,11 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
             ambientMag.append(sensorMagnitude)
         print("Moving forward, Magnitude: " + str(sensorMagnitude))
         if castCalibrated:
@@ -257,13 +245,11 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
             ambientMag.append(sensorMagnitude)
         print("Moving right, Magnitude: " + str(sensorMagnitude))
         if castCalibrated:
@@ -283,13 +269,11 @@ async def cast():
         if castCalibrated:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
         else:
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
             csv_writer.writerow(
-                [time.strftime("%Y-%m-%d %H:%M:%S"), tello.get_yaw(), avg_x, avg_y, sourceAngle, 0,
-                 sensorMagnitude])
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
             ambientMag.append(sensorMagnitude)
             ambientMag = magTolerance * max(ambientMag)
             castCalibrated = True
@@ -413,7 +397,7 @@ async def main():
 
 asyncio.run(main())
 
-data = pandas.read_csv(filename, usecols=['Time', 'Error'])
+data = pandas.read_csv(filename, usecols=['Time', 'Magnitude'])
 plt.plot(data)
 # Disconnect from Tello
 # tello.end()
