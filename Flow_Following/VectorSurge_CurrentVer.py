@@ -18,7 +18,7 @@ from numpy.f2py.crackfortran import endifs
 # Initialize drone/sensor parameters
 angle = 0
 sensorMagnitude = 0
-castSpeed = 20
+castSpeed = 30#10#20
 
 # Initialize calibration and filtering
 x_values = []
@@ -56,18 +56,18 @@ castState = bool
 turnState = bool
 runState = bool
 
-angle_threshold = 10
+angle_threshold = 5
 sourceAngle = 0
 
 y_lowerBound = -10
 y_upperBound = 10
-magThreshold = 1
-magLimit = 3
+magThreshold = 1.2
+magLimit = 6.5
 
 #Cast Variables
 initial_cast_time = 4
-increment_time = 3
-forward_move_time = 1
+increment_time = 2
+forward_move_time = 0.5
 
 # BLE setup
 address = "18:2D:E3:60:9B:30"  # Change for your specific device
@@ -79,7 +79,7 @@ client = BleakClient(address)
 # Create Tello drone object
 tello = Tello()
 
-def get_unique_filename(base=r"C:\Users\ltjth\Documents\Research\VectorSurge", extension=".csv"):
+def get_unique_filename(base=r"C:\Users\ltjth\Documents\Research\VectorSurge_30", extension=".csv"):
     counter = 1
     while os.path.exists(f"{base}_{counter}{extension}"):
         counter += 1
@@ -97,7 +97,7 @@ async def turn():
     if castState:
         while sensorMagnitude >= magThreshold:
             avg_x, avg_y = await get_xy()
-            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi))) % 360
+            sourceAngle = (int(np.arctan2(avg_y, avg_x) * (180 / np.pi)))+180 % 360
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             error = desiredAngle - sourceAngle
             forward_command = 60
@@ -159,6 +159,7 @@ async def turn():
                     [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, error, 4])
                 print("Maximum magnitude exceeded ... ending run")
                 tello.land()
+                tello.query_battery()
                 await client.disconnect()
                 break
     else:
@@ -192,7 +193,7 @@ async def cast():
 
     # Move Left
     lap1 = time.time()
-    while elapsed < goalCastTime:
+    while elapsed < goalCastTime/2:
         tello.send_rc_control(-castSpeed, 0, 0, 0)  # Move left
         elapsed = time.time() - lap1
         avg_x, avg_y = await get_xy()
@@ -260,6 +261,28 @@ async def cast():
                 return True
 
         time.sleep(0.1)
+
+    lap1 = time.time()
+    while elapsed < goalCastTime / 2:
+        tello.send_rc_control(-castSpeed, 0, 0, 0)  # Move left
+        elapsed = time.time() - lap1
+        avg_x, avg_y = await get_xy()
+        if castCalibrated:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
+            csv_writer.writerow(
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
+        else:
+            sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2)
+            csv_writer.writerow(
+                [time.strftime("%Y-%m-%d %H:%M:%S"), avg_x, avg_y, sourceAngle, sensorMagnitude, 0, 0, 0])
+            ambientMag.append(sensorMagnitude)
+        print("Moving left, Magnitude: " + str(sensorMagnitude))
+        if castCalibrated:
+            if sensorMagnitude > magThreshold:
+                print('Flow detected, following')
+                return True
+        time.sleep(0.1)  # Small delay to prevent too frequent checks
+
     # Move Forward
     print('Moving forward...')
     elapsed = 0
@@ -373,7 +396,7 @@ async def main():
     tello.takeoff()
     tello.send_rc_control(0, 0, 0, 0)
     time.sleep(2)
-    tello.move_up(20)
+    tello.move_up(40)
 
     last_magnitude = None
 
@@ -393,13 +416,27 @@ async def main():
             print("SpaceBar pressed. Exiting.")
             tello.query_battery()
             tello.land()
+            plot_source_angle_vs_time(filename)
             break
     await client.disconnect()
 
 
 asyncio.run(main())
 
-data = pandas.read_csv(filename, usecols=['Time', 'Magnitude'])
-plt.plot(data)
-# Disconnect from Tello
-# tello.end()
+def plot_source_angle_vs_time(filename):
+    times = []
+    source_angles = []
+
+    with open(filename, 'r') as csvfile:
+        csv_reader = csv.DictReader(csvfile)
+        for row in csv_reader:
+            #times.append(float(row['Time']))
+            source_angles.append(float(row['Sensor Magnitude']))
+
+    plt.figure()
+    plt.plot(source_angles, marker='o', linestyle='-')
+    plt.title('Magnitude vs Unit')
+    plt.xlabel('Units')
+    plt.ylabel('Magnitude')
+    plt.grid(True)
+    plt.show()
