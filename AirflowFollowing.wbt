@@ -1,0 +1,83 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/appearances/protos/Parquetry.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/bitcraze/crazyflie/protos/Crazyflie.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/solids/protos/SolidBox.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/factory/containers/protos/WoodenBox.proto"
+
+WorldInfo {
+  info [
+    "Bitcraze's Crazyflie drone with autonomoy."
+    "This simulation has the Crazyflie in an apartement with wall following'"
+  ]
+  title "Crazyflie Apartment"
+}
+Viewpoint {
+  orientation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0944
+  position -0.5631462885958097 1.8574682091646162 7.874567809791686
+  exposure 0.5
+  follow "Crazyflie"
+}
+TexturedBackground {
+  texture "mars"
+  luminosity 3
+  skybox FALSE
+  skyColor [
+    0.2 0.2 0.2
+  ]
+}
+DEF FLOOR Solid {
+  translation -4.95 -3.3 0
+  children [
+    Shape {
+      appearance Parquetry {
+        type "light strip"
+        textureTransform TextureTransform {
+          scale 50 50
+        }
+      }
+      geometry DEF FLOOR_PLANE Plane {
+        size 100 100
+      }
+    }
+  ]
+  name "floor"
+  boundingObject USE FLOOR_PLANE
+  locked TRUE
+}
+WoodenBox {
+  translation 0.39 0.59 0.3
+}
+Crazyflie {
+  hidden linearVelocity_0 0.24407222359097366 -0.43637837126070866 0.001488646565462722
+  hidden angularVelocity_0 -2.122293565139214e-06 2.0789665092771482e-07 2.841317541634779e-16
+  translation -0.4835699737512121 1.8421202526230147 0.9989806955718502
+  rotation 1.5003209015649767e-06 -5.517213573748867e-07 0.9999999999987224 0.5099616949306106
+  controller "crazyflie_py_wallfollowing"
+}
+SolidBox {
+  translation 0 0.62 0
+  name "ZONE 1"
+  size 0.1 1 0.1
+}
+SolidBox {
+  translation -1.74 0.61 0
+  name "ZONE 3"
+  size 0.1 2.25 0.1
+}
+SolidBox {
+  translation -0.74 0.61 0
+  name "ZONE 2"
+  size 0.1 2 0.1
+}
+SolidBox {
+  translation -2.74 0.61 0
+  name "ZONE 4"
+  size 0.1 2.5 0.1
+}
+SolidBox {
+  translation -3.74 0.61 0
+  name "ZONE 5"
+  size 0.1 3.25 0.1
+}
