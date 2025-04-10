@@ -84,14 +84,14 @@ increment_time = 2
 forward_move_time = 0.5
 
 # BLE setup
-address = "18:2D:E3:60:9B:30"  # Change for your specific device
+address = "69:75:3D:A1:D1:C7"  # Change for your specific device
 characteristic_uuid = "00002A56-0000-1000-8000-00805F9B34FB"
 
 # Create a BleakClient object
 client = BleakClient(address)
 
 
-def get_unique_filename(base=r"C:\Users\bridg\OneDrive\Documents\Research", extension=".csv"):
+def get_unique_filename(base=r"C:\Users\ltjth\Documents\Research", extension=".csv"):
     counter = 1
     while os.path.exists(f"{base}_{counter}{extension}"):
         counter += 1
@@ -115,7 +115,7 @@ async def turn(mc):
             sensorMagnitude = math.sqrt(avg_x ** 2 + avg_y ** 2) / ambientMag
             flowMap.append((avg_x, avg_y, sensorMagnitude, sourceAngle))
             error = desiredAngle - sourceAngle
-            forward_command = 0.6  # m/s
+            forward_command = 0.2  # m/s
             current_time = time.time()
             if prevTime is None or prevTime == 0:
                 prevTime = current_time - 0.1
@@ -344,8 +344,8 @@ async def read_data():
         ard_list = ard_string.split()
         x = float(ard_list[1])
         y = float(ard_list[2])
-        x_IMU = float(ard_list[3])
-        y_IMU = float(ard_list[4])
+        # x_IMU = float(ard_list[3])
+        # y_IMU = float(ard_list[4])
         return x, y
 
 
@@ -408,7 +408,7 @@ async def main():
     with SyncCrazyflie(URI) as scf:
         with MotionCommander(scf) as mc:
             print(f"Connected to Crazyflie at {URI}")
-            print(f"Battery level: {scf.cf.param.get_value('pm.vbat')}V")
+            #print(f"Battery level: {scf.cf.param.get_value('pm.vbat')}V")
 
             # Takeoff and hover
             # Note: MotionCommander automatically performs takeoff
