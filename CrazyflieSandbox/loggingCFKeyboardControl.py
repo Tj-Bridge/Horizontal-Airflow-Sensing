@@ -1,134 +1,159 @@
 import logging
-import threading
 import time
+import os
+import csv
+from datetime import datetime
+from threading import Thread
+
 from pynput import keyboard
 
 import cflib.crtp
+from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from cflib.positioning.motion_commander import MotionCommander
+from cflib.crazyflie.log import LogConfig
 
-URI = 'radio://0/80/2M'
-logging.basicConfig(level=logging.ERROR)
+# === CONFIGURATION ===
+URI = 'radio://0/80/2M/E7E7E7E7E7'  # Ensure correct URI
+directory_path = r"C:\Users\ltjth\Documents\Research\VelocityLogs"
+base_filename = "draftrun"#"imu_loggerRun"
+file_extension = ".csv"
+
+# === FILE HANDLING ===
+file_number = 1
+while True:
+    csv_filename = f"{base_filename}{file_number}{file_extension}"
+    full_path = os.path.join(directory_path, csv_filename)
+    if not os.path.exists(full_path):
+        break
+    file_number += 1
+
+# === LOGGING SETUP ===
+class LoggerThread(Thread):
+    def __init__(self, cf):
+        super().__init__()
+        self.cf = cf
+        self.running = True
+
+    def run(self):
+        log_conf = LogConfig(name='Logger', period_in_ms=100)
+        log_conf.add_variable('stateEstimate.vx', 'float')
+        log_conf.add_variable('stateEstimate.vy', 'float')
+        log_conf.add_variable('stateEstimate.vz', 'float')
+        log_conf.add_variable('stabilizer.roll', 'float')
+        log_conf.add_variable('stabilizer.pitch', 'float')
+        log_conf.add_variable('stabilizer.yaw', 'float')
 
 
+
+        def log_data(timestamp, data, logconf):
+            if self.running:
+                now = datetime.now()
+                timestamp_list = now.month, now.day, now.hour, now.minute, now.second, now.microsecond
+                writer.writerow({
+                    "Month": now.month,
+                    "Day": now.day,
+                    "Hour": now.hour,
+                    "Minute": now.minute,
+                    "Second": now.second,
+                    "Microsecond": now.microsecond,
+                    "Vx": data['stateEstimate.vx'],
+                    "Vy": data['stateEstimate.vy'],
+                    "Vz": data['stateEstimate.vz'],
+                    "Roll": data['stabilizer.roll'],
+                    "Pitch": data['stabilizer.pitch'],
+                    "Yaw": data['stabilizer.yaw']
+                })
+
+        def log_error(logconf, msg):
+            print(f"Logging error: {msg}")
+
+        self.cf.log.add_config(log_conf)
+        log_conf.data_received_cb.add_callback(log_data)
+        log_conf.error_cb.add_callback(log_error)
+
+        try:
+            log_conf.start()
+            while self.running:
+                time.sleep(0.1)
+            log_conf.stop()
+        except Exception as e:
+            print("Logging error:", e)
+
+    def stop(self):
+        self.running = False
+
+
+# === KEYBOARD CONTROL ===
 class KeyboardDrone:
     def __init__(self, mc):
         self.mc = mc
-        self.max_velocity = 0.4
-        self.accel_rate = 0.05
-        self.update_interval = 0.1
-
-        self.active_keys = set()
-        self.target_x = 0
-        self.target_y = 0
-        self.target_z = 0
-        self.current_x = 0
-        self.current_y = 0
-        self.current_z = 0
-
-        self.turning = 0  # -1 for left, 1 for right, 0 for no turning
-        self.turn_speed = 180  # degrees per second
-
-        self.running = False
-        self.motion_thread = None
-        print("Press 'u' to take off, 'l' to land.")
-
-    def _motion_loop(self):
-        while self.running:
-            self.current_x = self._approach(self.current_x, self.target_x)
-            self.current_y = self._approach(self.current_y, self.target_y)
-            self.current_z = self._approach(self.current_z, self.target_z)
-            self.mc.start_linear_motion(self.current_x, self.current_y, self.current_z)
-
-            if self.turning == -1:
-                self.mc.start_turn_left(self.turn_speed)
-            elif self.turning == 1:
-                self.mc.start_turn_right(self.turn_speed)
-            else:
-                self.mc._stop_turn()  # private call, but necessary here
-
-            time.sleep(self.update_interval)
-
-    def _approach(self, current, target):
-        if abs(target - current) < self.accel_rate:
-            return target
-        return current + self.accel_rate * (1 if target > current else -1)
-
-    def update_targets(self):
-        self.target_x = 0
-        self.target_y = 0
-        self.target_z = 0
-
-        if 'w' in self.active_keys:
-            self.target_x += self.max_velocity
-        if 's' in self.active_keys:
-            self.target_x -= self.max_velocity
-        if 'd' in self.active_keys:
-            self.target_y += self.max_velocity
-        if 'a' in self.active_keys:
-            self.target_y -= self.max_velocity
-        if 'p' in self.active_keys:
-            self.target_z += self.max_velocity
-        if 'c' in self.active_keys:
-            self.target_z -= self.max_velocity
+        self.velocity = 0.5
+        self.ang_velocity = 120
 
     def on_press(self, key):
         try:
-            k = key.char.lower()
-        except AttributeError:
-            return
+            if key.char == 'w':
+                self.mc.start_forward(self.velocity)
+                print("Drone should move forward")
+            elif key.char == 's':
+                self.mc.start_back(self.velocity)
+                print("Drone should move backward")
+            elif key.char == 'a':
+                self.mc.start_left(self.velocity)
+                print("Drone should move left")
+            elif key.char == 'd':
+                self.mc.start_right(self.velocity)
+                print("Drone should move right")
+            elif key.char == 'u':
+                self.mc.take_off(0.5)
+                print("Drone should take off")
+            elif key.char == 'c':
+                self.mc.start_down(self.velocity)
+                print("Drone should move down")
+            elif key.char == 'l':
+                self.mc.land()
+                print("Drone should land")
+            elif key.char == 'q':
+                self.mc.start_turn_left(self.ang_velocity)
+                print("Drone should turn left")
+            elif key.char == 'e':
+                self.mc.start_turn_right(self.ang_velocity)
+                print("Drone should turn right")
 
-        if k == 'u':
-            self.mc.take_off(0.5)
-            time.sleep(1.5)
-            if not self.running:
-                self.running = True
-                self.motion_thread = threading.Thread(target=self._motion_loop)
-                self.motion_thread.start()
-        elif k == 'l':
-            self.stop()
-            self.mc.land()
-        elif k in {'w', 'a', 's', 'd', 'p', 'c'}:
-            if k not in self.active_keys:
-                self.active_keys.add(k)
-                self.update_targets()
-        elif k == 'q':
-            self.turning = -1
-        elif k == 'e':
-            self.turning = 1
+        except AttributeError:
+            if key == keyboard.Key.space:
+                self.mc.start_up(self.velocity)
 
     def on_release(self, key):
-        try:
-            k = key.char.lower()
-            if k in self.active_keys:
-                self.active_keys.remove(k)
-                self.update_targets()
-            elif k in {'q', 'e'}:
-                self.turning = 0
-        except AttributeError:
-            pass
+        self.mc.stop()
+        print("stopping")
+        if key == keyboard.Key.esc:
+            return False  # Stop the listener
 
-    def stop(self):
-        if self.running:
-            self.running = False
-            if self.motion_thread is not None:
-                self.motion_thread.join()
-            self.mc.stop()
-            self.mc._stop_turn()
+
+
 
 
 if __name__ == '__main__':
     cflib.crtp.init_drivers(enable_debug_driver=False)
+    with open(full_path, mode="w", newline='') as csv_file:
+        fieldnames = ["Month","Day","Hour","Minute","Second","Microsecond","Vx", "Vy", "Vz", "Roll", "Pitch", "Yaw"]
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
+            mc = MotionCommander(scf)
+            logger = LoggerThread(scf.cf)
+            logger.start()
 
-    with SyncCrazyflie(URI) as scf:
-        mc = MotionCommander(scf)
-        drone = KeyboardDrone(mc)
 
-        try:
-            with keyboard.Listener(
-                on_press=drone.on_press,
-                on_release=drone.on_release
-            ) as listener:
+            print("Ready for keyboard control. Press ESC to quit.")
+            drone = KeyboardDrone(mc)
+            with keyboard.Listener(on_press=drone.on_press, on_release=drone.on_release) as listener:
                 listener.join()
-        finally:
-            drone.stop()
+
+            print("Stopping logger and landing...")
+            logger.stop()
+            time.sleep(1)  # Allow logger to finish
+            mc.land()
+            time.sleep(1)
