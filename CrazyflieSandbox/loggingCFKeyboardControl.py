@@ -16,7 +16,7 @@ from cflib.crazyflie.log import LogConfig
 # === CONFIGURATION ===
 URI = 'radio://0/80/2M/E7E7E7E7E7'  # Ensure correct URI
 directory_path = r"C:\Users\ltjth\Documents\Research\VelocityLogs"
-base_filename = "draftrun"#"imu_loggerRun"
+base_filename = "imuWFlowLogger0.6ms"#"imu_loggerRun"
 file_extension = ".csv"
 
 # === FILE HANDLING ===
@@ -36,13 +36,13 @@ class LoggerThread(Thread):
         self.running = True
 
     def run(self):
-        log_conf = LogConfig(name='Logger', period_in_ms=100)
+        log_conf = LogConfig(name='Logger', period_in_ms=10)
         log_conf.add_variable('stateEstimate.vx', 'float')
         log_conf.add_variable('stateEstimate.vy', 'float')
-        log_conf.add_variable('stateEstimate.vz', 'float')
-        log_conf.add_variable('stabilizer.roll', 'float')
-        log_conf.add_variable('stabilizer.pitch', 'float')
-        log_conf.add_variable('stabilizer.yaw', 'float')
+        log_conf.add_variable('uart_logger.flowX', 'int16_t')
+        log_conf.add_variable('uart_logger.flowY', 'int16_t')
+
+
 
 
 
@@ -59,10 +59,9 @@ class LoggerThread(Thread):
                     "Microsecond": now.microsecond,
                     "Vx": data['stateEstimate.vx'],
                     "Vy": data['stateEstimate.vy'],
-                    "Vz": data['stateEstimate.vz'],
-                    "Roll": data['stabilizer.roll'],
-                    "Pitch": data['stabilizer.pitch'],
-                    "Yaw": data['stabilizer.yaw']
+                    "Bx": data['uart_logger.flowX'],
+                    "By": data['uart_logger.flowY']
+
                 })
 
         def log_error(logconf, msg):
@@ -88,7 +87,7 @@ class LoggerThread(Thread):
 class KeyboardDrone:
     def __init__(self, mc):
         self.mc = mc
-        self.velocity = 0.5
+        self.velocity = 0.6
         self.ang_velocity = 120
 
     def on_press(self, key):
@@ -138,7 +137,7 @@ class KeyboardDrone:
 if __name__ == '__main__':
     cflib.crtp.init_drivers(enable_debug_driver=False)
     with open(full_path, mode="w", newline='') as csv_file:
-        fieldnames = ["Month","Day","Hour","Minute","Second","Microsecond","Vx", "Vy", "Vz", "Roll", "Pitch", "Yaw"]
+        fieldnames = ["Month","Day","Hour","Minute","Second","Microsecond","Vx", "Vy", "Bx", "By"]
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
