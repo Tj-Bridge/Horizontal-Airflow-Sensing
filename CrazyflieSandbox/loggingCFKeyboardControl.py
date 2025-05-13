@@ -1,8 +1,11 @@
+import math
 import logging
 import time
 import os
 import csv
 from datetime import datetime
+from math import atan2
+from pickle import FALSE
 from threading import Thread
 
 from pynput import keyboard
@@ -12,12 +15,37 @@ from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from cflib.positioning.motion_commander import MotionCommander
 from cflib.crazyflie.log import LogConfig
+from scipy.stats import false_discovery_control
 
-# === CONFIGURATION ===
+# === STATE CONFIGURATION ===
+manualCtrl = False
+autoCtrl = False
+flying = False
+
+# === DRONE CONFIGURATION ===
 URI = 'radio://0/80/2M/E7E7E7E7E7'  # Ensure correct URI
-directory_path = r"C:\Users\ltjth\Documents\Research\VelocityLogs"
+directory_path = r"C:\Users\bridg\OneDrive\Documents\Research\Data"
 base_filename = "imuWFlowLogger0.6ms"#"imu_loggerRun"
 file_extension = ".csv"
+DEFAULT_HEIGHT = 1
+
+# === DRONE TEST PARAMETERS ===
+prevTime = 0
+Kp = 0.6
+Ki = 0
+Kd = 0.08
+integral = 0
+prevError = 0
+prevTime = 0
+currTime = 0
+angleVar = 10
+desiredAngle = 90
+magThreshold = 2
+current_time = 0
+sourceAngle = 0
+sensorMag = 0
+heading = 0
+error = 0
 
 # === FILE HANDLING ===
 file_number = 1
@@ -34,6 +62,8 @@ class LoggerThread(Thread):
         super().__init__()
         self.cf = cf
         self.running = True
+        self.data_call = {}
+        self.calibration = {}
 
     def run(self):
         log_conf = LogConfig(name='Logger', period_in_ms=10)
@@ -41,14 +71,25 @@ class LoggerThread(Thread):
         log_conf.add_variable('stateEstimate.vy', 'float')
         log_conf.add_variable('uart_logger.flowX', 'int16_t')
         log_conf.add_variable('uart_logger.flowY', 'int16_t')
-
-
-
-
+        log_conf.add_variable('stabilizer.yaw', 'float')
 
         def log_data(timestamp, data, logconf):
             if self.running:
                 now = datetime.now()
+                if not self.calibration:
+                    self.calibration = {
+                    "Bx": data['uart_logger.flowX'],
+                    "By": data['uart_logger.flowY']
+                }
+
+                self.data_call = {
+                    "timestamp": now.microsecond,
+                    "Vx": data['stateEstimate.vx'],
+                    "Vy": data['stateEstimate.vy'],
+                    "Bx": data['uart_logger.flowX'] - self.calibration["Bx"],
+                    "By": data['uart_logger.flowY'] - self.calibration["By"],
+                    "yaw": data['stabilizer.yaw']*180/math.pi
+                }
                 timestamp_list = now.month, now.day, now.hour, now.minute, now.second, now.microsecond
                 writer.writerow({
                     "Month": now.month,
@@ -60,8 +101,8 @@ class LoggerThread(Thread):
                     "Vx": data['stateEstimate.vx'],
                     "Vy": data['stateEstimate.vy'],
                     "Bx": data['uart_logger.flowX'],
-                    "By": data['uart_logger.flowY']
-
+                    "By": data['uart_logger.flowY'],
+                    "yaw": data['stabilizer.yaw']*180/math.pi
                 })
 
         def log_error(logconf, msg):
@@ -81,7 +122,6 @@ class LoggerThread(Thread):
 
     def stop(self):
         self.running = False
-
 
 # === KEYBOARD CONTROL ===
 class KeyboardDrone:
@@ -130,14 +170,79 @@ class KeyboardDrone:
         if key == keyboard.Key.esc:
             return False  # Stop the listener
 
+# === TEST CODE ===
+def getData(logger):
+    global sourceAngle, sensorMag, heading, current_time, error
+    current_time = logger.data_call["timestamp"]
+    sourceAngle = atan2(logger.data_call["Bx"], logger.data_call["By"]) * 180 / math.pi
+    sensorMag = math.sqrt(logger.data_call["Bx"] ** 2 + logger.data_call["By"] ** 2)
+    heading = logger.data_call["yaw"]
+    if heading < 0:
+        heading = 360 + heading
+    error = heading - sourceAngle
+    if -270 <= error <= -180:
+        error += 360
+    return [current_time, sourceAngle, sensorMag, heading, error]
 
+def fly(scf, logger):
+    global Kp, Ki, Kd, prevError, integral, current_time, prevTime, flying, magThreshold, current_time, sourceAngle, sensorMag, heading, error
+    with (MotionCommander(scf, default_height=DEFAULT_HEIGHT) as mc):
+        print(logger.data_call)
+        [current_time, sourceAngle, sensorMag, heading, error] = getData()
+        if prevTime is None or prevTime == 0:
+            prevTime = current_time - 0.1
+        delta_time = current_time - prevTime
+        integral += error * delta_time
+        derivative = (error - prevError) / delta_time  # if last_error is not None else 0
+        command = int(Kp * error + Ki * integral + Kd * derivative)
+        prevError = error
+        prevTime = current_time
 
+        while sensorMag > magThreshold:  # 0.6*maxCal:
+            # turnFlag
+            [current_time, sourceAngle, sensorMag, heading, error] = getData(logger)
+            print(logger.data_call)
+            while abs(error) > angleVar:
+                # if error is in Q1 or Q4 rotate right
+                # updating logic to use source angle in if statement condition
+                # Changing the line below to reflect positive values. If turning does not work, switch back
+                [current_time, sourceAngle, sensorMag, heading, error] = getData(logger)
+                print(logger.data_call)
+                if (270 <= sourceAngle <= 360) or (0 <= sourceAngle <= (desiredAngle - angleVar)):
+                    mc.start_turn_right(error)
+                    print("Turning right, source angle & Magnitude: " + str(sourceAngle) + ':' + str(
+                        sensorMag) + " error: " + str(error))
+                    rightNow = datetime.now().strftime('%H:%M:%S')
+                    time.sleep(0.05)
+
+                # if error is in Q2 or Q3 rotate left
+                # Changing the line below to negate above elif statement. Change back to else statement if logic fails
+                elif (desiredAngle + angleVar) <= sourceAngle < 270:
+                    mc.start_turn_left(error)
+                    print("Turning left, source angle & Magnitude: " + str(sourceAngle) + ':' + str(
+                        sensorMag) + " error: " + str(error))
+                    rightNow = datetime.now().strftime('%H:%M:%S')
+                    time.sleep(0.05)
+
+            if abs(error) <= angleVar:  # if error is within desired threshold, hover
+                print("Within Threshold. Moving towards detected flow at " + str(
+                    sourceAngle) + ' degrees with a magnitude of ' + str(sensorMag))
+                print("Stopping logger and landing...")
+                logger.stop()
+                time.sleep(1)  # Allow logger to finish
+                mc.land()
+                time.sleep(1)
+                flying = False
+        else:
+            print("Searching for wind| Mag: " + str(sensorMag))
+            rightNow = datetime.now().strftime('%H:%M:%S')
+            
 
 
 if __name__ == '__main__':
     cflib.crtp.init_drivers(enable_debug_driver=False)
     with open(full_path, mode="w", newline='') as csv_file:
-        fieldnames = ["Month","Day","Hour","Minute","Second","Microsecond","Vx", "Vy", "Bx", "By"]
+        fieldnames = ["Month","Day","Hour","Minute","Second","Microsecond","Vx", "Vy", "Bx", "By", "yaw"]
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
@@ -145,14 +250,27 @@ if __name__ == '__main__':
             logger = LoggerThread(scf.cf)
             logger.start()
 
+            print("Type M for Manual Mode. Type A for Autonomous Mode. To enter Testing mode, press H")
+            modeCtrl = input()
+            if modeCtrl == "M":
+                manualCtrl = True
+                autoCtrl = False
+            elif modeCtrl == "A":
+                autoCtrl = True
+                manualCtrl = False
 
-            print("Ready for keyboard control. Press ESC to quit.")
-            drone = KeyboardDrone(mc)
-            with keyboard.Listener(on_press=drone.on_press, on_release=drone.on_release) as listener:
-                listener.join()
-
-            print("Stopping logger and landing...")
-            logger.stop()
-            time.sleep(1)  # Allow logger to finish
-            mc.land()
-            time.sleep(1)
+            if manualCtrl:
+                print("Ready for keyboard control. Press ESC to quit.")
+                drone = KeyboardDrone(mc)
+                with keyboard.Listener(on_press=drone.on_press, on_release=drone.on_release) as listener:
+                    listener.join()
+            elif autoCtrl:
+                print("Ready for autonomous mode. Press ESC to quit.")
+                drone = KeyboardDrone(mc)
+            else:
+                print("Entering test mode.")
+                # Fly the drone
+                flying = True
+                while flying:
+                    fly(scf, logger)
+                
